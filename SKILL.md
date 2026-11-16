@@ -3,7 +3,7 @@ name: dsh-qwen-media
 description: 调用阿里云百炼 Token Plan（qwen-token-plan-cn，sk-sp- Key，消耗套餐 Credits）生成图像与视频：文生图、图生图/图像编辑、连贯组图、文生视频、首帧图生视频、多参考生视频、音频口型同步、参考文件/网页生视频。用户说"生成图片/画一张/画图/文生图/编辑图片/换背景/组图/连环图/生成视频/文生视频/图生视频/让图动起来/参考生视频/配音/口型"或输入 /dsh-qwen-media 时使用。
 whenToUse: 任何项目会话中需要千问/万相/HappyHorse 图像或视频生成时；未指定模型先给能力对比引导选择，再让用户知情选择输出规格。
 metadata:
-  version: 1.1.0
+  version: 1.1.1
   homepage: https://github.com/sh-lsy/dsh-qwen-media
 ---
 
@@ -43,7 +43,7 @@ Token Plan 图像/视频生成。所有调用消耗**套餐 Credits**（`sk-sp-`
 - **自动 `--no-extend`**（脚本在有参考时默认 prompt_extend=false；显式 `--extend` 可开）。
 - wan3.0 加 `--negative "毛色改变、斑纹位置错误、瞳色改变、画风突变、多余肢体"`。
 - **设定表/多面板参考 → 默认两步**：① qwen-image-3.0-pro I2I 重绘单主体立绘（正面全身、纯色背景、保持斑纹瞳色画风、无文字无面板）；② 立绘作 r2v/i2v 参考。单主体干净图→直接参考。
-- 高保真双锁（wan3.0）：`--first-frame 立绘 --ref 立绘`。
+- 高保真（wan3.0）：`--ref 立绘`（参考锁，可多张，ratio 生效）或 `--first-frame 立绘` 单独（构图锁，比例随首帧）；**首帧不可与参考图同用**（仅可配 `--last-frame`）。happyhorse 用 r2v 多参考 / i2v 首帧。
 - 指代：happyhorse `[Image n]`；wan `图 n`/`Image n`。
 
 ## 3. 执行

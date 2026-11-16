@@ -59,6 +59,11 @@ async function main() {
     if (!/\[Image\s*\d+\]/i.test(args.prompt)) notes.push('Prompt has no [Image n] reference; add e.g. "[Image 1] 中的角色…" so the model binds references (see references/prompt-guide.md).');
   } else if (isWan) {
     if (firstFrame) media.push({ type: 'first_frame', url: toImageInput(firstFrame, 20 * 1048576) });
+    if (args['last-frame']) {
+      if (!firstFrame) throw new SkillError('PARAMS', 'wan3.0 --last-frame requires --first-frame.', 6);
+      media.push({ type: 'last_frame', url: toImageInput(args['last-frame'], 20 * 1048576) });
+    }
+    if (firstFrame && (refs.length || refVideos.length || args['media-file'] || args['media-link'])) throw new SkillError('PARAMS', 'wan3.0 first_frame can only combine with last_frame, not reference images/videos/file/link. Use --ref alone (reference lock) or --first-frame alone (composition lock).', 6);
     for (const r of refs) media.push({ type: 'reference_image', url: toImageInput(r, 20 * 1048576) });
     for (const r of refVideos) media.push({ type: 'reference_video', url: r });
     if (refs.length + refVideos.length > 5) throw new SkillError('PARAMS', 'wan reference images + videos must be <= 5.', 6);
