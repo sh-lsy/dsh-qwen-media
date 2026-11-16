@@ -3,7 +3,7 @@
 import path from 'node:path';
 import { VIDEO_MODELS, SkillError, resolveKey, host, outDir, stamp, fail, apiJson, download, toImageInput, ledgerAppend, parseArgs, commonEntry, redact } from './lib.mjs';
 
-const BOOLS = ['watermark', 'no-extend', 'check', 'doctor', 'stats', 'version'];
+const BOOLS = ['watermark', 'no-extend', 'extend', 'dry-run', 'check', 'doctor', 'stats', 'version'];
 const ARRAYS = ['ref', 'ref-video'];
 const RESOLUTIONS = ['480P', '720P', '1080P'];
 const RATIOS = ['16:9', '9:16', '1:1', '4:3', '3:4', '4:5', '5:4', '9:21', '21:9'];
@@ -76,15 +76,23 @@ async function main() {
   const duration = parseInt(args.duration || '5', 10);
   const [dMin, dMax] = isWan ? [2, 30] : [3, 15];
   if (!Number.isInteger(duration) || duration < dMin || duration > dMax) throw new SkillError('PARAMS', `duration for ${model} must be an integer ${dMin}-${dMax} seconds.`, 6);
-  const parameters = { resolution, duration, watermark: !!args.watermark, prompt_extend: !args['no-extend'] };
-  if (!isI2V) {
+  const hasRefs = media.length > 0;
+  const extend = args.extend ? true : (args['no-extend'] ? false : !hasRefs);
+  if (hasRefs && !extend && !args['no-extend']) notes.push('reference task: prompt_extend auto-disabled to preserve reference fidelity (--extend to force on).');
+  const parameters = { resolution, duration, watermark: !!args.watermark, prompt_extend: extend };
+  if (isI2V) {
+    if (args.ratio) notes.push('i2v output aspect follows the first frame; ratio ignored.');
+  } else if (isWan && firstFrame) {
+    if (args.ratio) notes.push('wan with first frame ignores ratio; output follows the first frame aspect.');
+  } else {
     const ratio = args.ratio || '16:9';
     if (!RATIOS.includes(ratio)) throw new SkillError('PARAMS', `ratio must be one of ${RATIOS.join(', ')}.`, 6);
     parameters.ratio = ratio;
-  } else if (args.ratio) notes.push('i2v output aspect follows the first frame; ratio ignored.');
+  }
   if (args.seed) parameters.seed = parseInt(args.seed, 10);
   if (isWan && args.negative) parameters.negative_prompt = args.negative;
   if (!isWan && args.negative) notes.push('negative_prompt is only supported by wan3.0-video; ignored.');
+  if (args['dry-run']) { process.stdout.write(JSON.stringify({ dryRun: true, model, endpoint: base + '/api/v1/services/aigc/video-generation/video-synthesis', body: { model, input, parameters }, notes }, null, 2) + '\n'); process.exit(0); }
   const sub = await apiJson(base, key, '/api/v1/services/aigc/video-generation/video-synthesis', { method: 'POST', body: { model, input, parameters }, headers: { 'x-dashscope-async': 'enable' }, timeoutMs: 120000 });
   const taskId = sub.json.output && sub.json.output.task_id;
   if (!taskId) throw new SkillError('API_ERROR', 'Submit returned no task_id: ' + redact(JSON.stringify(sub.json).slice(0, 300), key), 4);

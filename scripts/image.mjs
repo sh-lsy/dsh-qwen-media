@@ -3,7 +3,7 @@
 import path from 'node:path';
 import { IMAGE_MODELS, SkillError, resolveKey, host, outDir, stamp, fail, apiJson, download, toImageInput, solveSize, ledgerAppend, parseArgs, commonEntry, redact } from './lib.mjs';
 
-const BOOLS = ['sequential', 'no-extend', 'thinking', 'watermark', 'async', 'check', 'doctor', 'stats', 'version'];
+const BOOLS = ['sequential', 'no-extend', 'extend', 'thinking', 'watermark', 'async', 'dry-run', 'check', 'doctor', 'stats', 'version'];
 const ARRAYS = ['image'];
 
 function extractImages(json) {
@@ -29,7 +29,10 @@ async function main() {
   const notes = [];
   const solved = solveSize(model, args, images.length > 0, !!args.sequential);
   if (solved.note) notes.push(solved.note);
-  const parameters = { watermark: !!args.watermark, prompt_extend: !args['no-extend'] };
+  const hasRefs = images.length > 0;
+  const extend = args.extend ? true : (args['no-extend'] ? false : !hasRefs);
+  if (hasRefs && !extend && !args['no-extend']) notes.push('reference task: prompt_extend auto-disabled to preserve reference fidelity (--extend to force on).');
+  const parameters = { watermark: !!args.watermark, prompt_extend: extend };
   if (solved.size) parameters.size = solved.size;
   if (args.n) {
     const n = parseInt(args.n, 10);
@@ -47,6 +50,7 @@ async function main() {
   }
   const body = { model, input: { messages: [{ role: 'user', content: [{ text: args.prompt }, ...images.map((image) => ({ image }))] }] }, parameters };
   const dir = outDir(args);
+  if (args['dry-run']) { process.stdout.write(JSON.stringify({ dryRun: true, model, endpoint: base + '/api/v1/services/aigc/multimodal-generation/generation', body, notes }, null, 2) + '\n'); process.exit(0); }
   let json; let taskId = null;
   if (args.async) {
     const sub = await apiJson(base, key, '/api/v1/services/aigc/multimodal-generation/generation', { method: 'POST', body, headers: { 'x-dashscope-async': 'enable' }, timeoutMs: 120000 });

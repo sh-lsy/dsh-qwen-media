@@ -6,7 +6,7 @@ import os from 'node:os';
 import net from 'node:net';
 import tls from 'node:tls';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.1.0';
 export const IMAGE_MODELS = ['qwen-image-3.0-pro', 'wan2.7-image-pro', 'wan2.7-image'];
 export const VIDEO_MODELS = ['wan3.0-video', 'happyhorse-1.1-t2v', 'happyhorse-1.1-i2v', 'happyhorse-1.1-r2v'];
 const KEY_NAMES = ['QWEN_TOKEN_PLAN_CN_API_KEY', 'QWEN_TOKEN_PLAN_API_KEY', 'TOKEN_PLAN_API_KEY'];
