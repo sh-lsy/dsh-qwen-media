@@ -63,7 +63,7 @@ happyhorse prompt ≤2500 中文字符/5000 非中文；wan prompt 见指南。
 
 ## 未核实/排除项
 
-- 第三方宣称 wan3.0 30fps、happyhorse 24fps/7语言唇形同步：官方 API 页未载明，不作承诺、不暴露 fps 参数。
+- wan3.0 帧率 30fps 已由 usage.fps 实测确认；happyhorse 24fps/7语言唇形同步官方 API 页未载明，不作承诺、不暴露 fps 参数。
 - `happyhorse-video-edit` 不在个人版 Essential 清单 → 排除。
 - 本地音频/文档/网页输入官方仅收 URL（Base64 仅图像）→ 引导用户提供公网 URL。
 
