@@ -6,7 +6,7 @@ import os from 'node:os';
 import net from 'node:net';
 import tls from 'node:tls';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
 export const IMAGE_MODELS = ['qwen-image-3.0-pro', 'wan2.7-image-pro', 'wan2.7-image'];
 export const VIDEO_MODELS = ['wan3.0-video', 'happyhorse-1.1-t2v', 'happyhorse-1.1-i2v', 'happyhorse-1.1-r2v'];
 const KEY_NAMES = ['QWEN_TOKEN_PLAN_CN_API_KEY', 'QWEN_TOKEN_PLAN_API_KEY', 'TOKEN_PLAN_API_KEY'];
@@ -185,14 +185,26 @@ export async function download(url, dest, key) {
 }
 
 // ---------- inputs ----------
+// DSH attachment object paths are content-addressed and extensionless; sniff magic bytes.
+function sniffMime(b) {
+  const tag = (n) => b.slice(0, n).toString('latin1');
+  if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length > 8 && b[0] === 0x89 && tag(4) === '\x89PNG') return 'image/png';
+  if (b.length > 12 && tag(4) === 'RIFF' && b.slice(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+  if (b.length > 6 && tag(6).startsWith('GIF8')) return 'image/gif';
+  if (b.length > 2 && tag(2) === 'BM') return 'image/bmp';
+  if (b.length > 4 && (tag(4) === 'II*\x00' || tag(4) === 'MM\x00*')) return 'image/tiff';
+  return null;
+}
 export function toImageInput(v, maxBytes) {
   if (/^https?:\/\//i.test(v) || v.startsWith('data:')) return v;
   const p = path.resolve(v);
-  const st = fs.statSync(p); // throws if missing -> surfaced as UNEXPECTED; check below
+  const st = fs.statSync(p); // throws if missing -> surfaced as UNEXPECTED
   if (st.size > maxBytes) throw new SkillError('PARAMS', `Input image ${p} is ${(st.size / 1048576).toFixed(1)}MB, over the ${maxBytes / 1048576}MB limit. Compress it or provide a public URL.`, 6);
-  const mime = MIME[path.extname(p).slice(1).toLowerCase()];
+  const buf = fs.readFileSync(p);
+  const mime = MIME[path.extname(p).slice(1).toLowerCase()] || sniffMime(buf);
   if (!mime) throw new SkillError('PARAMS', `Unsupported image format for ${p}; use PNG/JPG/WEBP/BMP/TIFF/GIF.`, 6);
-  return `data:${mime};base64,${fs.readFileSync(p).toString('base64')}`;
+  return `data:${mime};base64,${buf.toString('base64')}`;
 }
 
 // ---------- size solver ----------

@@ -3,7 +3,7 @@ name: dsh-qwen-media
 description: 调用阿里云百炼 Token Plan（qwen-token-plan-cn，sk-sp- Key，消耗套餐 Credits）生成图像与视频：文生图、图生图/图像编辑、连贯组图、文生视频、首帧图生视频、多参考生视频、音频口型同步、参考文件/网页生视频。用户说"生成图片/画一张/画图/文生图/编辑图片/换背景/组图/连环图/生成视频/文生视频/图生视频/让图动起来/参考生视频/配音/口型"或输入 /dsh-qwen-media 时使用。
 whenToUse: 任何项目会话中需要千问/万相/HappyHorse 图像或视频生成时；用户未指定模型先引导选择，指定则直接执行。
 metadata:
-  version: 1.0.0
+  version: 1.0.1
   homepage: https://github.com/sh-lsy/dsh-qwen-media
 ---
 
