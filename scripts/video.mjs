@@ -1,7 +1,7 @@
 // dsh-qwen-media video generation (Token Plan, async task submit + poll + download).
 // Usage: node video.mjs --model <id> --prompt <text> [options] | --task <id> to resume polling/download.
 import path from 'node:path';
-import { VIDEO_MODELS, SkillError, resolveKey, host, outDir, stamp, fail, apiJson, download, toImageInput, ledgerAppend, parseArgs, commonEntry, redact } from './lib.mjs';
+import { VIDEO_MODELS, SkillError, resolveKey, outDir, stamp, fail, apiJson, download, toImageInput, requireEdge, ledgerAppend, parseArgs, commonEntry, redact, checkPromptLength } from './lib.mjs';
 
 const BOOLS = ['watermark', 'no-extend', 'extend', 'dry-run', 'check', 'doctor', 'stats', 'version'];
 const ARRAYS = ['ref', 'ref-video'];
@@ -33,9 +33,7 @@ async function pollAndDownload(base, key, taskId, args, model) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2), { booleans: BOOLS, arrays: ARRAYS });
-  await commonEntry(args, args.region);
-  const { key } = resolveKey();
-  const base = host(args.region);
+  const { key, base } = await commonEntry(args);
   if (args.task) { await pollAndDownload(base, key, args.task, args, args.model); return; }
   const model = args.model;
   if (!VIDEO_MODELS.includes(model)) throw new SkillError('PARAMS', `Unknown video model "${model}". Personal Token Plan supports: ${VIDEO_MODELS.join(', ')}. See references/models.md.`, 6);
@@ -49,22 +47,25 @@ async function main() {
   const firstFrame = args['first-frame'];
   const refs = args.ref || [];
   const refVideos = args['ref-video'] || [];
+  checkPromptLength(model, args.prompt, notes);
   if (isI2V) {
     if (!firstFrame || refs.length || refVideos.length) throw new SkillError('PARAMS', 'happyhorse-1.1-i2v requires exactly one --first-frame and no refs.', 6);
+    requireEdge(firstFrame, 300, 'happyhorse-1.1-i2v first frame');
     media.push({ type: 'first_frame', url: toImageInput(firstFrame, 20 * 1048576) });
   } else if (isR2V) {
     if (firstFrame) throw new SkillError('PARAMS', 'happyhorse-1.1-r2v takes --ref images (1-9), not --first-frame.', 6);
     if (refs.length < 1 || refs.length > 9) throw new SkillError('PARAMS', 'happyhorse-1.1-r2v requires 1-9 --ref images.', 6);
+    for (const r of refs) requireEdge(r, 400, 'happyhorse-1.1-r2v reference');
     for (const r of refs) media.push({ type: 'reference_image', url: toImageInput(r, 20 * 1048576) });
     if (!/\[Image\s*\d+\]/i.test(args.prompt)) notes.push('Prompt has no [Image n] reference; add e.g. "[Image 1] 中的角色…" so the model binds references (see references/prompt-guide.md).');
   } else if (isWan) {
-    if (firstFrame) media.push({ type: 'first_frame', url: toImageInput(firstFrame, 20 * 1048576) });
+    if (firstFrame) { requireEdge(firstFrame, 240, 'wan3.0-video first frame'); media.push({ type: 'first_frame', url: toImageInput(firstFrame, 20 * 1048576) }); }
     if (args['last-frame']) {
       if (!firstFrame) throw new SkillError('PARAMS', 'wan3.0 --last-frame requires --first-frame.', 6);
       media.push({ type: 'last_frame', url: toImageInput(args['last-frame'], 20 * 1048576) });
     }
     if (firstFrame && (refs.length || refVideos.length || args['media-file'] || args['media-link'])) throw new SkillError('PARAMS', 'wan3.0 first_frame can only combine with last_frame, not reference images/videos/file/link. Use --ref alone (reference lock) or --first-frame alone (composition lock).', 6);
-    for (const r of refs) media.push({ type: 'reference_image', url: toImageInput(r, 20 * 1048576) });
+    for (const r of refs) { requireEdge(r, 240, 'wan3.0-video reference'); media.push({ type: 'reference_image', url: toImageInput(r, 20 * 1048576) }); }
     for (const r of refVideos) media.push({ type: 'reference_video', url: r });
     if (refs.length + refVideos.length > 5) throw new SkillError('PARAMS', 'wan reference images + videos must be <= 5.', 6);
     if (args['media-file'] && args['media-link']) throw new SkillError('PARAMS', 'wan3.0 --media-file and --media-link are mutually exclusive.', 6);

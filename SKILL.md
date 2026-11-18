@@ -3,7 +3,7 @@ name: dsh-qwen-media
 description: 调用阿里云百炼 Token Plan（qwen-token-plan-cn，sk-sp- Key，消耗套餐 Credits）生成图像与视频：文生图、图生图/图像编辑、连贯组图、文生视频、首帧图生视频、多参考生视频、音频口型同步、参考文件/网页生视频。用户说"生成图片/画一张/画图/文生图/编辑图片/换背景/组图/连环图/生成视频/文生视频/图生视频/让图动起来/参考生视频/配音/口型"或输入 /dsh-qwen-media 时使用。
 whenToUse: 任何项目会话中需要千问/万相/HappyHorse 图像或视频生成时；未指定模型先给能力对比引导选择，再让用户知情选择输出规格。
 metadata:
-  version: 1.1.2
+  version: 1.2.0
   homepage: https://github.com/sh-lsy/dsh-qwen-media
 ---
 
@@ -18,6 +18,9 @@ Token Plan 图像/视频生成。所有调用消耗**套餐 Credits**（`sk-sp-`
 运行 `node "<base>/scripts/image.mjs" --doctor`（零 Credits 鉴权探针）。
 - `KEY_MISSING` → 停止并引导：DSH **设置 → 模型 → qwen-token-plan-cn** 填 sk-sp- Key；或 `~/.dsh/.env` 加 `QWEN_TOKEN_PLAN_CN_API_KEY=sk-sp-…`。**绝不收 Key 进聊天**。配好后重试。
 - `WRONG_KEY_TYPE` → 解释 sk- 会按量另计费，引导改订阅 Key。`KEY_INVALID` → 引导重填。`NETWORK` → 脚本自动 honoring `HTTP(S)_PROXY`。
+- **`node` 不在 PATH** → 用 DSH 内置运行时执行（`load_workspace_dependencies` 给出的 Node 绝对路径），或请用户安装 Node ≥18 后重试；不要因此放弃任务。
+- **地域**：默认 cn-beijing(CN)；若命中的是国际站 Key（`QWEN_TOKEN_PLAN_API_KEY`），脚本自动切 ap-southeast-1；`--region cn|intl` 可显式覆盖。doctor 的 `regionSource` 说明来源。
+- **付费前预检**：本地参考图最小边不足（i2v<300px、r2v<400px、wan<240px）会在提交前以 PARAMS 拒绝；prompt 超长（happyhorse 2500/5000、wan 5000 字符、qwen ~4500 token）会在 `notes` 警告——请把特征锁/画风锁写在最前面，避免被截断。
 
 ## 1. 模型选择（两段式知情提问）
 

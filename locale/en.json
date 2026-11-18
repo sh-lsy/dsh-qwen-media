@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Qwen media generation",
+    "description": "Generate images and videos on your Alibaba Cloud Token Plan subscription, with capability-guided model and spec selection, reference-fidelity locks, and zero-install scripts.",
+    "detail": "docs/DETAIL.md"
+  }
+}

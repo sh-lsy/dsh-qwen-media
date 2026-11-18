@@ -66,13 +66,17 @@ git clone https://github.com/sh-lsy/dsh-qwen-media.git ~/.dsh/skills/dsh-qwen-me
 ## CLI 速览
 
 ```bash
-node scripts/image.mjs --doctor                 # 零成本自检（node/Key来源/鉴权探针）
-node scripts/image.mjs --check                  # 只报 Key 来源，不输出 Key
+node scripts/image.mjs --doctor                 # 零成本自检（node/Key来源/地域推断/鉴权探针）
+node scripts/image.mjs --check                  # 只报 Key 来源与生效地域，不输出 Key
 node scripts/image.mjs --model qwen-image-3.0-pro --prompt "…" --tier 2K --aspect 16:9
 node scripts/image.mjs --model wan2.7-image-pro --prompt "…" --image a.png --image b.png --sequential --n 4
+node scripts/image.mjs … --async                # 提交异步图像任务（后台+轮询）
+node scripts/image.mjs … --dry-run              # 零成本打印将发送的请求体
 node scripts/video.mjs --model wan3.0-video --prompt "…" --resolution 720P --duration 5
+node scripts/video.mjs --model wan3.0-video --prompt "…" --first-frame cat.png --last-frame end.png
 node scripts/video.mjs --model happyhorse-1.1-i2v --prompt "…" --first-frame cat.png
 node scripts/video.mjs --model happyhorse-1.1-r2v --prompt "[Image 1] 中的角色…" --ref r1.png --ref r2.png
+node scripts/video.mjs … --ratio 9:16 --out my-dir   # 竖屏与自定义输出目录
 node scripts/video.mjs --task <task_id>         # 断点续查/补下载（24h 内）
 node scripts/image.mjs --stats                  # 本地用量台账汇总
 ```
@@ -92,6 +96,7 @@ Key 只存在于脚本进程内存：不打印、不写文件、不进命令行�
 
 ## Changelog
 
+- 1.2.0：地域自动推断（只配国际站 Key 时自动用 ap-southeast-1，`--region` 可覆盖）；付费前输入预检（参考图最小边、prompt 超长警告，零成本拦截）；SKILL 增 Node 缺失回退指引；README CLI 补全 `--dry-run/--async/--last-frame/--out/--extend`；随仓库提供 `dsh.bundle` 清单，可用 `dsh plugin add` 安装。
 - 1.1.2：文档校准——wan3.0 帧率 30fps 经 usage.fps 实测确认写入能力卡。
 - 1.1.1：修正 wan3.0 媒体组合约束——first_frame 仅可与 last_frame 组合、不可与参考图/视频/file/link 同用（脚本提前拒绝非法组合，零成本）；新增 `--last-frame`；保真改为"参考锁(--ref)"或"构图锁(--first-frame 单独)"二选一。
 - 1.1.0：模型能力透明化（model-cards 能力卡 + 两段式知情提问：能力对比表→模型感知规格选择，选择即成本确认）；参考图保真（特征锁/画风锁/参考任务自动关闭 prompt_extend/wan3 negative/设定表先转单主体立绘）；`--dry-run` 零成本预览请求体；wan 有首帧时忽略 ratio。

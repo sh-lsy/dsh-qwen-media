@@ -1,0 +1,6 @@
+# Bundle patch: mount the bundled skill provider. The capability itself lives in
+# SKILL.md + scripts/ at the package root, so a plain `git clone` into a skills
+# directory keeps working without this bundle.
+- insert:
+    - id: qwen-media
+      name: dsh-qwen-media

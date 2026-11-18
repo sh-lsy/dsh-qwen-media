@@ -1,7 +1,7 @@
 // dsh-qwen-media image generation (Token Plan, DashScope protocol, sync or async).
 // Usage: node image.mjs --model <id> --prompt <text> [options]   (--check/--doctor/--stats/--version supported)
 import path from 'node:path';
-import { IMAGE_MODELS, SkillError, resolveKey, host, outDir, stamp, fail, apiJson, download, toImageInput, solveSize, ledgerAppend, parseArgs, commonEntry, redact } from './lib.mjs';
+import { IMAGE_MODELS, SkillError, resolveKey, outDir, stamp, fail, apiJson, download, toImageInput, solveSize, ledgerAppend, parseArgs, commonEntry, redact, checkPromptLength } from './lib.mjs';
 
 const BOOLS = ['sequential', 'no-extend', 'extend', 'thinking', 'watermark', 'async', 'dry-run', 'check', 'doctor', 'stats', 'version'];
 const ARRAYS = ['image'];
@@ -17,9 +17,7 @@ function extractImages(json) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2), { booleans: BOOLS, arrays: ARRAYS });
-  await commonEntry(args, args.region);
-  const { key } = resolveKey();
-  const base = host(args.region);
+  const { key, base } = await commonEntry(args);
   const model = args.model;
   if (!IMAGE_MODELS.includes(model)) throw new SkillError('PARAMS', `Unknown image model "${model}". Personal Token Plan supports: ${IMAGE_MODELS.join(', ')}. See references/models.md.`, 6);
   if (!args.prompt || !args.prompt.trim()) throw new SkillError('PARAMS', '--prompt is required.', 6);
@@ -27,6 +25,7 @@ async function main() {
   const images = (args.image || []).map((v) => toImageInput(v, 10 * 1048576));
   if (isQwen && images.length > 3) throw new SkillError('PARAMS', 'qwen-image-3.0-pro accepts at most 3 reference images.', 6);
   const notes = [];
+  checkPromptLength(model, args.prompt, notes);
   const solved = solveSize(model, args, images.length > 0, !!args.sequential);
   if (solved.note) notes.push(solved.note);
   const hasRefs = images.length > 0;

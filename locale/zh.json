@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "千问图像视频生成",
+    "description": "用阿里云百炼 Token Plan 订阅生成图像与视频：按能力对比选择模型与输出规格、参考图保真、脚本零依赖。",
+    "detail": "docs/DETAIL.md"
+  }
+}

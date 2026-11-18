@@ -6,7 +6,7 @@ import os from 'node:os';
 import net from 'node:net';
 import tls from 'node:tls';
 
-export const VERSION = '1.1.2';
+export const VERSION = '1.2.0';
 export const IMAGE_MODELS = ['qwen-image-3.0-pro', 'wan2.7-image-pro', 'wan2.7-image'];
 export const VIDEO_MODELS = ['wan3.0-video', 'happyhorse-1.1-t2v', 'happyhorse-1.1-i2v', 'happyhorse-1.1-r2v'];
 const KEY_NAMES = ['QWEN_TOKEN_PLAN_CN_API_KEY', 'QWEN_TOKEN_PLAN_API_KEY', 'TOKEN_PLAN_API_KEY'];
@@ -70,11 +70,21 @@ export function resolveKey() {
         if (!key.startsWith('sk-sp-')) {
           throw new SkillError('WRONG_KEY_TYPE', `${name} resolved from ${source} does not start with sk-sp-; it looks like a pay-as-you-go key, which would bill separately from the Token Plan subscription. Configure the qwen-token-plan-cn subscription key instead.`, 3);
         }
-        return { key, source: `${source} (${name})` };
+        return { key, name, source: `${source} (${name})` };
       }
     }
   }
   throw new SkillError('KEY_MISSING', 'No Token Plan API key found. Configure it in DSH Settings -> Models -> qwen-token-plan-cn (enter the sk-sp- key), or add a line QWEN_TOKEN_PLAN_CN_API_KEY=sk-sp-... to ~/.dsh/.env (Windows: %USERPROFILE%\\.dsh\\.env). Never paste the key into chat.', 2);
+}
+
+/**
+ * Pick the Token Plan region. An explicit --region always wins; otherwise the credential name decides,
+ * because the international subscription key (QWEN_TOKEN_PLAN_API_KEY) only works on ap-southeast-1.
+ */
+export function regionFor(args, keyInfo) {
+  if (args.region) return args.region === 'intl' ? 'intl' : 'cn';
+  if (keyInfo && keyInfo.name === 'QWEN_TOKEN_PLAN_API_KEY') return 'intl';
+  return 'cn';
 }
 
 export function redact(text, key) { let s = String(text); if (key) s = s.split(key).join('[redacted]'); return s; }
@@ -241,6 +251,78 @@ export function solveSize(model, args, hasImages, sequential) {
   return {}; // let the model auto-recommend
 }
 
+// ---------- zero-cost input preflight (saves Credits that would be spent on a server-side 400) ----------
+/** Decode pixel dimensions from PNG/JPEG/WebP/GIF/BMP headers without any dependency. */
+export function imageSize(buf) {
+  const tag = (a, b) => buf.toString('latin1', a, b);
+  if (buf.length > 24 && buf[0] === 0x89 && tag(1, 4) === 'PNG') return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+  if (buf.length > 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+    let off = 2;
+    while (off + 9 < buf.length) {
+      if (buf[off] !== 0xff) { off++; continue; }
+      const marker = buf[off + 1];
+      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { off += 2; continue; }
+      if (marker === 0xd9 || marker === 0xda) break;
+      const len = buf.readUInt16BE(off + 2);
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return { height: buf.readUInt16BE(off + 5), width: buf.readUInt16BE(off + 7) };
+      }
+      off += 2 + len;
+    }
+  }
+  if (buf.length > 30 && tag(0, 4) === 'RIFF' && tag(8, 12) === 'WEBP') {
+    const fmt = tag(12, 16);
+    if (fmt === 'VP8 ') return { width: buf.readUInt16LE(26) & 0x3fff, height: buf.readUInt16LE(28) & 0x3fff };
+    if (fmt === 'VP8L') { const b = buf.readUInt32LE(21); return { width: (b & 0x3fff) + 1, height: ((b >> 14) & 0x3fff) + 1 }; }
+    if (fmt === 'VP8X') return { width: 1 + buf.readUIntLE(24, 3), height: 1 + buf.readUIntLE(27, 3) };
+  }
+  if (buf.length > 10 && tag(0, 3) === 'GIF') return { width: buf.readUInt16LE(6), height: buf.readUInt16LE(8) };
+  if (buf.length > 26 && tag(0, 2) === 'BM') return { width: buf.readInt32LE(18), height: Math.abs(buf.readInt32LE(22)) };
+  return null;
+}
+/** Local file facts for preflight; remote URLs are reported as unknown and skipped. */
+export function inspectImage(v) {
+  if (/^https?:\/\//i.test(v) || String(v).startsWith('data:')) return { kind: 'remote' };
+  const p = path.resolve(v);
+  const buf = fs.readFileSync(p);
+  return { kind: 'local', path: p, bytes: buf.length, mime: MIME[path.extname(p).slice(1).toLowerCase()] || sniffMime(buf), size: imageSize(buf) };
+}
+/**
+ * Reject a local reference image whose edges are below the model minimum before a paid submission.
+ * Remote URLs are skipped because their pixels cannot be read without a network request.
+ */
+export function requireEdge(v, minEdge, role) {
+  const info = inspectImage(v);
+  if (info.kind !== 'local' || info.size === undefined || info.size === null) return null;
+  const { width, height } = info.size;
+  if (Math.min(width, height) < minEdge) {
+    throw new SkillError('PARAMS', `${role} ${info.path} is ${width}x${height}px; this model needs both edges >= ${minEdge}px, so the request would be rejected after spending a call. Upscale it or pass another image.`, 6);
+  }
+  return info.size;
+}
+/** Rough token estimate: CJK counts about one token per character, other text about one per 3.3 characters. */
+export function estimateTokens(s) {
+  const cjk = (String(s).match(/[\u3000-\u9fff\uac00-\ud7af]/g) || []).length;
+  return Math.round(cjk + (String(s).length - cjk) / 3.3);
+}
+/** Warn before a request whose prompt the model would truncate, since truncation can drop the fidelity locks. */
+export function checkPromptLength(model, prompt, notes) {
+  const s = String(prompt);
+  const cjk = (s.match(/[\u3000-\u9fff\uac00-\ud7af]/g) || []).length;
+  if (model === 'qwen-image-3.0-pro') {
+    const tokens = estimateTokens(s);
+    if (tokens > 4500) notes.push(`prompt is ~${tokens} tokens, over the 4500-token guidance; trim redundant wording so the model does not dilute key details.`);
+    return;
+  }
+  if (model.startsWith('happyhorse')) {
+    const limit = cjk > 0 ? 2500 : 5000;
+    const count = cjk > 0 ? cjk : s.length;
+    if (count > limit) notes.push(`prompt has ~${count} ${cjk > 0 ? 'CJK characters' : 'characters'}, over the happyhorse limit of ${limit}; the tail is truncated server-side — keep the feature and style locks at the front.`);
+    return;
+  }
+  if (s.length > 5000) notes.push('prompt exceeds 5000 characters; wan models truncate the tail — keep the feature and style locks at the front.');
+}
+
 // ---------- ledger ----------
 export function ledgerAppend(dir, entry) {
   fs.mkdirSync(dir, { recursive: true });
@@ -260,11 +342,19 @@ export function ledgerStats(dir) {
 }
 
 // ---------- doctor / check ----------
-export async function doctor(region) {
-  const report = { version: VERSION, node: process.version, nodeOk: parseInt(process.version.slice(1), 10) >= 18, region: region || 'cn', host: host(region) };
-  let key = null;
-  try { const r = resolveKey(); key = r.key; report.keySource = r.source; report.keyPrefixOk = true; }
-  catch (e) { report.keySource = null; report.keyProblem = e.code; return report; }
+export async function doctor(args) {
+  const report = { version: VERSION, node: process.version, nodeOk: parseInt(process.version.slice(1), 10) >= 18 };
+  let key = null; let keyInfo = null;
+  try { keyInfo = resolveKey(); key = keyInfo.key; report.keySource = keyInfo.source; report.keyPrefixOk = true; }
+  catch (e) {
+    report.keySource = null; report.keyProblem = e.code;
+    report.region = args.region === 'intl' ? 'intl' : 'cn'; report.regionSource = 'default (no key to infer from)';
+    report.host = host(report.region);
+    return report;
+  }
+  report.region = regionFor(args, keyInfo);
+  report.regionSource = args.region ? 'flag' : keyInfo.name === 'QWEN_TOKEN_PLAN_API_KEY' ? 'inferred from international key' : 'default';
+  report.host = host(report.region);
   try {
     const res = await httpRequest(report.host + '/api/v1/tasks/00000000-0000-0000-0000-000000000000', { headers: { authorization: `Bearer ${key}` }, timeoutMs: 30000 });
     report.authProbe = res.status === 401 ? 'KEY_INVALID (401)' : `KEY_OK (probe HTTP ${res.status}, zero Credits)`;
@@ -287,13 +377,18 @@ export function parseArgs(argv, { booleans = [], arrays = [] } = {}) {
   }
   return args;
 }
-export async function commonEntry(args, region) {
+export async function commonEntry(args) {
   if (args.version) { process.stdout.write(VERSION + '\n'); process.exit(0); }
   if (args.check) {
-    try { const r = resolveKey(); process.stdout.write(JSON.stringify({ ok: true, keySource: r.source }, null, 2) + '\n'); process.exit(0); }
-    catch (e) { fail(e, null); }
+    try {
+      const r = resolveKey();
+      process.stdout.write(JSON.stringify({ ok: true, keySource: r.source, effectiveRegion: regionFor(args, r) }, null, 2) + '\n');
+      process.exit(0);
+    } catch (e) { fail(e, null); }
   }
-  if (args.doctor) { process.stdout.write(JSON.stringify(await doctor(region), null, 2) + '\n'); process.exit(0); }
+  if (args.doctor) { process.stdout.write(JSON.stringify(await doctor(args), null, 2) + '\n'); process.exit(0); }
   if (args.stats) { process.stdout.write(JSON.stringify(ledgerStats(outDir(args)), null, 2) + '\n'); process.exit(0); }
-  return args;
+  const keyInfo = resolveKey();
+  const region = regionFor(args, keyInfo);
+  return { key: keyInfo.key, keyName: keyInfo.name, region, base: host(region) };
 }
